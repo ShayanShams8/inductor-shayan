@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inductor / Solenoid Simulator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #182022;
+      --muted: #5a686b;
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-solid: #ffffff;
+      --line: rgba(24, 32, 34, 0.13);
+      --blue: #2c74c9;
+      --orange: #d96f20;
+      --copper: #b9692b;
+      --surface: #f3f5ef;
+      --focus: #0b65c2;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--surface);
+      letter-spacing: 0;
+    }
+
+    .simulator {
+      position: relative;
+      min-height: 100svh;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    #fieldCanvas {
+      position: fixed;
+      inset: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #f6f8f2;
+      z-index: 0;
+    }
+
+    .control-panel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 2;
+      width: min(370px, calc(100vw - 40px));
+      max-height: calc(100svh - 40px);
+      overflow: auto;
+      padding: 18px;
+      border: 1px solid rgba(24, 32, 34, 0.12);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 54px rgba(25, 39, 42, 0.18);
+      backdrop-filter: blur(18px);
+    }
+
+    .credit {
+      position: fixed;
+      top: 20px;
+      left: 22px;
+      z-index: 2;
+      padding: 8px 11px;
+      border: 1px solid rgba(24, 32, 34, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.7);
+      box-shadow: 0 10px 28px rgba(35, 45, 46, 0.1);
+      backdrop-filter: blur(14px);
+      color: #354144;
+      font-size: 0.84rem;
+      font-weight: 720;
+    }
+
+    .panel-title {
+      margin: 0 0 14px;
+      font-size: clamp(1.25rem, 2vw, 1.65rem);
+      line-height: 1.12;
+      font-weight: 780;
+    }
+
+    .control-group,
+    .readout {
+      padding-top: 14px;
+      margin-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .control-group:first-of-type {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .label-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 9px;
+    }
+
+    label,
+    legend {
+      font-size: 0.9rem;
+      font-weight: 690;
+      color: #1d292c;
+    }
+
+    output {
+      flex: 0 0 auto;
+      min-width: 4.6rem;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      color: var(--muted);
+      font-weight: 680;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--focus);
+      cursor: pointer;
+    }
+
+    fieldset {
+      padding: 0;
+      margin: 0;
+      border: 0;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(244, 247, 248, 0.86);
+    }
+
+    .segmented label {
+      position: relative;
+      min-width: 0;
+    }
+
+    .segmented input {
+      position: absolute;
+      opacity: 0;
+      inset: 0;
+      cursor: pointer;
+    }
+
+    .segmented span {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      color: #566265;
+      font-size: 0.86rem;
+      font-weight: 720;
+      line-height: 1.1;
+      text-align: center;
+      transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .segmented input:checked + span {
+      color: #11191b;
+      background: var(--panel-solid);
+      box-shadow: 0 3px 12px rgba(24, 32, 34, 0.12);
+    }
+
+    .segmented input:focus-visible + span,
+    input[type="range"]:focus-visible {
+      outline: 3px solid rgba(11, 101, 194, 0.34);
+      outline-offset: 2px;
+    }
+
+    .readout {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 0.91rem;
+      line-height: 1.35;
+    }
+
+    .readout p {
+      margin: 0;
+    }
+
+    .equation,
+    .field-value {
+      color: var(--ink);
+      font-weight: 760;
+    }
+
+    .note {
+      margin-top: 10px;
+      color: #657174;
+      font-size: 0.82rem;
+    }
+
+    .legend-explainer {
+      position: fixed;
+      left: 22px;
+      bottom: 20px;
+      z-index: 2;
+      width: min(650px, calc(100vw - 44px));
+      padding: 13px 16px;
+      border: 1px solid rgba(24, 32, 34, 0.1);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.76);
+      box-shadow: 0 12px 34px rgba(35, 45, 46, 0.12);
+      backdrop-filter: blur(14px);
+      color: #354144;
+      font-size: 0.92rem;
+      line-height: 1.42;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-bottom: 7px;
+      font-size: 0.84rem;
+      font-weight: 720;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .legend-swatch {
+      width: 28px;
+      height: 3px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 10px 0 0 -1px currentColor;
+    }
+
+    .legend-item.field {
+      color: var(--blue);
+    }
+
+    .legend-item.current {
+      color: var(--orange);
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    noscript {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      z-index: 3;
+      transform: translate(-50%, -50%);
+      width: min(420px, calc(100vw - 40px));
+      padding: 18px;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 18px 54px rgba(25, 39, 42, 0.22);
+      color: var(--ink);
+    }
+
+    @media (max-width: 760px) {
+      body {
+        overflow: auto;
+      }
+
+      #fieldCanvas {
+        position: fixed;
+      }
+
+      .control-panel {
+        top: 12px;
+        right: 12px;
+        width: min(340px, calc(100vw - 24px));
+        padding: 15px;
+      }
+
+      .credit {
+        top: 12px;
+        left: 12px;
+      }
+
+      .legend-explainer {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+        font-size: 0.86rem;
+      }
+    }
+
+    @media (max-height: 620px) {
+      .legend-explainer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="simulator">
+    <canvas id="fieldCanvas" role="img" aria-label="Animated canvas drawing of a horizontal air-core solenoid, its conventional current, and magnetic field lines."></canvas>
+    <div class="credit">Built by Shayan Shams</div>
+
+    <section class="control-panel" aria-labelledby="panelTitle">
+      <h1 class="panel-title" id="panelTitle">Inductor / Solenoid Simulator</h1>
+
+      <div class="control-group">
+        <div class="label-row">
+          <label for="currentRange">Current magnitude, I (A)</label>
+          <output id="currentValue" for="currentRange">5.0 A</output>
+        </div>
+        <input id="currentRange" type="range" min="0" max="10" step="0.1" value="5" aria-describedby="currentValue">
+      </div>
+
+      <fieldset class="control-group">
+        <legend>Current direction</legend>
+        <div class="segmented">
+          <label>
+            <input type="radio" name="direction" value="ltr" checked>
+            <span>Left to Right</span>
+          </label>
+          <label>
+            <input type="radio" name="direction" value="rtl">
+            <span>Right to Left</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="control-group">
+        <div class="label-row">
+          <label for="turnsRange">Number of turns, N</label>
+          <output id="turnsValue" for="turnsRange">12</output>
+        </div>
+        <input id="turnsRange" type="range" min="3" max="30" step="1" value="12" aria-describedby="turnsValue">
+      </div>
+
+      <div class="control-group">
+        <div class="label-row">
+          <label for="lengthRange">Solenoid length, L (m)</label>
+          <output id="lengthValue" for="lengthRange">0.75 m</output>
+        </div>
+        <input id="lengthRange" type="range" min="0.10" max="2.00" step="0.01" value="0.75" aria-describedby="lengthValue">
+      </div>
+
+      <div class="readout" aria-live="polite">
+        <p class="equation">B = &mu;<sub>0</sub>(N/L)I</p>
+        <p>&mu;<sub>0</sub> = 4&pi; &times; 10<sup>-7</sup> T&middot;m/A</p>
+        <p id="turnDensity">n = N/L = 16.0 turns/m</p>
+        <p class="field-value" id="fieldValue">B = 1.01 &times; 10<sup>-4</sup> T</p>
+        <p class="note" id="fieldStatus"></p>
+      </div>
+    </section>
+
+    <aside class="legend-explainer" aria-label="Legend and explanation">
+      <div class="legend">
+        <span class="legend-item field"><span class="legend-swatch" aria-hidden="true"></span>Blue arrows = magnetic field</span>
+        <span class="legend-item current"><span class="legend-swatch" aria-hidden="true"></span>Orange arrows = conventional current</span>
+      </div>
+    </aside>
+
+    <noscript>
+      This simulator needs JavaScript enabled so the controls can update the solenoid drawing and magnetic field calculation.
+    </noscript>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const MU0 = 4 * Math.PI * 1e-7;
+      const LIMITS = {
+        currentMax: 10,
+        turnsMax: 30,
+        lengthMin: 0.1,
+        lengthMax: 2
+      };
+      const MAX_B = MU0 * (LIMITS.turnsMax / LIMITS.lengthMin) * LIMITS.currentMax;
+
+      const canvas = document.getElementById("fieldCanvas");
+      const ctx = canvas.getContext("2d");
+
+      const controls = {
+        current: document.getElementById("currentRange"),
+        turns: document.getElementById("turnsRange"),
+        length: document.getElementById("lengthRange"),
+        directions: Array.from(document.querySelectorAll("input[name='direction']")),
+        currentValue: document.getElementById("currentValue"),
+        turnsValue: document.getElementById("turnsValue"),
+        lengthValue: document.getElementById("lengthValue"),
+        turnDensity: document.getElementById("turnDensity"),
+        fieldValue: document.getElementById("fieldValue"),
+        fieldStatus: document.getElementById("fieldStatus")
+      };
+
+      const state = {
+        current: Number(controls.current.value),
+        turns: Number(controls.turns.value),
+        length: Number(controls.length.value),
+        direction: "ltr"
+      };
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function lerp(start, end, amount) {
+        return start + (end - start) * amount;
+      }
+
+      function rgba(rgb, alpha) {
+        return `rgba(${rgb}, ${clamp(alpha, 0, 1)})`;
+      }
+
+      function resizeCanvas() {
+        const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width * dpr));
+        const height = Math.max(1, Math.floor(rect.height * dpr));
+
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function readInputs() {
+        state.current = Number(controls.current.value);
+        state.turns = Number(controls.turns.value);
+        state.length = Number(controls.length.value);
+        state.direction = controls.directions.find((input) => input.checked).value;
+        updateReadout();
+      }
+
+      function scientificHTML(value) {
+        if (!Number.isFinite(value) || value === 0) {
+          return "0 T";
+        }
+
+        const exponent = Math.floor(Math.log10(Math.abs(value)));
+        const mantissa = value / Math.pow(10, exponent);
+        return `${mantissa.toFixed(2)} &times; 10<sup>${exponent}</sup> T`;
+      }
+
+      function updateReadout() {
+        const turnDensity = state.turns / state.length;
+        const field = MU0 * turnDensity * state.current;
+
+        controls.currentValue.textContent = `${state.current.toFixed(1)} A`;
+        controls.turnsValue.textContent = String(state.turns);
+        controls.lengthValue.textContent = `${state.length.toFixed(2)} m`;
+        controls.turnDensity.textContent = `n = N/L = ${turnDensity.toFixed(1)} turns/m`;
+        controls.fieldValue.innerHTML = `B = ${scientificHTML(field)}`;
+        controls.fieldStatus.textContent = state.current === 0
+          ? "No current means no magnetic field in this ideal model."
+          : "";
+      }
+
+      function getGeometry(width, height) {
+        const lengthT = (state.length - LIMITS.lengthMin) / (LIMITS.lengthMax - LIMITS.lengthMin);
+        const maxLength = Math.min(width * 0.74, 990);
+        const minLength = Math.min(Math.max(width * 0.31, 230), maxLength * 0.62);
+        const coilLength = clamp(lerp(minLength, maxLength, lengthT), 190, width - 70);
+        const radius = clamp(Math.min(width * 0.08, height * 0.13), 42, 92);
+        const centerX = width / 2;
+        const centerY = height < 640 ? height * 0.58 : height * 0.53;
+        const x0 = centerX - coilLength / 2;
+        const x1 = centerX + coilLength / 2;
+
+        return {
+          width,
+          height,
+          x0,
+          x1,
+          centerX,
+          centerY,
+          coilLength,
+          radius,
+          pitch: coilLength / state.turns,
+          lead: clamp(width * 0.09, 52, 110)
+        };
+      }
+
+      function drawBackground(width, height) {
+        ctx.save();
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#f6f8f2";
+        ctx.fillRect(0, 0, width, height);
+
+        const grid = Math.max(34, Math.min(56, width / 24));
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(40, 55, 58, 0.045)";
+        ctx.beginPath();
+        for (let x = 0; x <= width + grid; x += grid) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+        }
+        for (let y = 0; y <= height + grid; y += grid) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function roundedRectPath(x, y, width, height, radius) {
+        const r = Math.min(radius, width / 2, height / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + width - r, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+        ctx.lineTo(x + width, y + height - r);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+        ctx.lineTo(x + r, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+      }
+
+      function drawAirCore(geometry) {
+        const { x0, x1, centerY, radius } = geometry;
+        const tubeHeight = radius * 0.92;
+        const y = centerY - tubeHeight / 2;
+        const gradient = ctx.createLinearGradient(0, y, 0, y + tubeHeight);
+        gradient.addColorStop(0, "rgba(255, 255, 255, 0.16)");
+        gradient.addColorStop(0.45, "rgba(227, 244, 249, 0.62)");
+        gradient.addColorStop(1, "rgba(255, 255, 255, 0.2)");
+
+        ctx.save();
+        roundedRectPath(x0 - 8, y, x1 - x0 + 16, tubeHeight, tubeHeight / 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(24, 72, 85, 0.12)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.setLineDash([7, 10]);
+        ctx.lineDashOffset = -2;
+        ctx.strokeStyle = "rgba(24, 72, 85, 0.22)";
+        ctx.beginPath();
+        ctx.moveTo(x0 - 22, centerY);
+        ctx.lineTo(x1 + 22, centerY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawArrowHead(fromX, fromY, toX, toY, size, color) {
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        const wing = Math.PI / 7;
+
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - size * Math.cos(angle - wing), toY - size * Math.sin(angle - wing));
+        ctx.lineTo(toX - size * 0.52 * Math.cos(angle), toY - size * 0.52 * Math.sin(angle));
+        ctx.lineTo(toX - size * Math.cos(angle + wing), toY - size * Math.sin(angle + wing));
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawArrowLine(x0, y0, x1, y1, options) {
+        const color = rgba(options.rgb, options.alpha);
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = options.lineWidth;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        if (options.dash) {
+          ctx.setLineDash(options.dash);
+          ctx.lineDashOffset = options.dashOffset || 0;
+        }
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        ctx.restore();
+
+        const arrowPositions = options.arrowPositions || [0.55];
+        for (const t of arrowPositions) {
+          const tx = lerp(x0, x1, t);
+          const ty = lerp(y0, y1, t);
+          const back = Math.max(10, options.headSize * 1.15);
+          const angle = Math.atan2(y1 - y0, x1 - x0);
+          drawArrowHead(
+            tx - Math.cos(angle) * back,
+            ty - Math.sin(angle) * back,
+            tx,
+            ty,
+            options.headSize,
+            color
+          );
+        }
+      }
+
+      function cubicPoint(p0, p1, p2, p3, t) {
+        const a = Math.pow(1 - t, 3);
+        const b = 3 * Math.pow(1 - t, 2) * t;
+        const c = 3 * (1 - t) * t * t;
+        const d = t * t * t;
+        return {
+          x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+          y: a * p0.y + b * p1.y + c * p2.y + d * p3.y
+        };
+      }
+
+      function drawCubicArrow(p0, p1, p2, p3, options) {
+        const color = rgba(options.rgb, options.alpha);
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = options.lineWidth;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        if (options.dash) {
+          ctx.setLineDash(options.dash);
+          ctx.lineDashOffset = options.dashOffset || 0;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+        ctx.stroke();
+        ctx.restore();
+
+        for (const t of options.arrowPositions || [0.5]) {
+          const from = cubicPoint(p0, p1, p2, p3, clamp(t - 0.025, 0, 1));
+          const to = cubicPoint(p0, p1, p2, p3, clamp(t + 0.025, 0, 1));
+          const point = cubicPoint(p0, p1, p2, p3, t);
+          drawArrowHead(from.x, from.y, point.x + (to.x - from.x) * 0.15, point.y + (to.y - from.y) * 0.15, options.headSize, color);
+        }
+      }
+
+      function drawFieldLines(geometry, visualStrength, time) {
+        if (visualStrength <= 0.004) {
+          return;
+        }
+
+        const { x0, x1, centerY, radius } = geometry;
+        const direction = state.direction === "ltr" ? 1 : -1;
+        const fieldRGB = "44, 116, 201";
+        const insideAlpha = 0.16 + visualStrength * 0.68;
+        const outsideAlpha = 0.06 + visualStrength * 0.34;
+        const insideWidth = 1.15 + visualStrength * 2.9;
+        const outsideWidth = 0.85 + visualStrength * 1.7;
+        const headSize = 7 + visualStrength * 6;
+        const dashOffset = time * 0.018;
+
+        const outsideConfigs = [
+          { offset: radius * 0.34, height: radius * 1.5, out: 50, arrows: [0.5] },
+          { offset: radius * 0.22, height: radius * 2.15, out: 78, arrows: [0.38, 0.72] },
+          { offset: radius * 0.1, height: radius * 2.8, out: 108, arrows: [0.5] }
+        ];
+
+        for (const config of outsideConfigs) {
+          for (const side of [-1, 1]) {
+            const baseY = centerY + side * config.offset;
+            const controlY = centerY + side * config.height;
+            const startX = direction > 0 ? x1 - 14 : x0 + 14;
+            const endX = direction > 0 ? x0 + 14 : x1 - 14;
+            const p0 = { x: startX, y: baseY };
+            const p1 = { x: startX + direction * config.out, y: controlY };
+            const p2 = { x: endX - direction * config.out, y: controlY };
+            const p3 = { x: endX, y: baseY };
+
+            drawCubicArrow(p0, p1, p2, p3, {
+              rgb: fieldRGB,
+              alpha: outsideAlpha,
+              lineWidth: outsideWidth,
+              headSize,
+              dash: [12, 12],
+              dashOffset,
+              arrowPositions: config.arrows
+            });
+          }
+        }
+
+        const yOffsets = [-0.42, -0.21, 0, 0.21, 0.42].map((amount) => amount * radius);
+        for (const offset of yOffsets) {
+          const startX = direction > 0 ? x0 + 18 : x1 - 18;
+          const endX = direction > 0 ? x1 - 18 : x0 + 18;
+          drawArrowLine(startX, centerY + offset, endX, centerY + offset, {
+            rgb: fieldRGB,
+            alpha: insideAlpha,
+            lineWidth: insideWidth,
+            headSize: headSize + 1,
+            dash: [18, 11],
+            dashOffset: -dashOffset * 1.25,
+            arrowPositions: [0.36, 0.7]
+          });
+        }
+      }
+
+      function drawNoCurrentMessage(geometry) {
+        const { centerX, centerY, radius } = geometry;
+        ctx.save();
+        ctx.fillStyle = "rgba(40, 50, 52, 0.72)";
+        ctx.font = "700 16px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("No current = no magnetic field", centerX, centerY - radius * 1.62);
+        ctx.restore();
+      }
+
+      function drawEllipseSegment(cx, cy, rx, ry, start, end, color, lineWidth) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, ry, 0, start, end);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawSolenoid(geometry, visualStrength, time) {
+        const { x0, x1, centerY, radius, pitch, lead } = geometry;
+        const wireWidth = clamp(pitch * 0.16, 3.2, 7.2);
+        const currentAlpha = state.current === 0
+          ? 0.24
+          : 0.62 + 0.3 * clamp(state.current / LIMITS.currentMax, 0, 1);
+        const currentRGB = "217, 111, 32";
+        const currentDirection = state.direction === "ltr" ? 1 : -1;
+
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        ctx.shadowColor = "rgba(93, 50, 22, 0.13)";
+        ctx.shadowBlur = 8;
+        ctx.strokeStyle = "#9d5b2a";
+        ctx.lineWidth = wireWidth + 2.3;
+        ctx.beginPath();
+        ctx.moveTo(x0 - lead, centerY);
+        ctx.lineTo(x0 + Math.min(12, pitch * 0.35), centerY);
+        ctx.moveTo(x1 - Math.min(12, pitch * 0.35), centerY);
+        ctx.lineTo(x1 + lead, centerY);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "#c87934";
+        ctx.lineWidth = wireWidth;
+        ctx.beginPath();
+        ctx.moveTo(x0 - lead, centerY);
+        ctx.lineTo(x0 + Math.min(12, pitch * 0.35), centerY);
+        ctx.moveTo(x1 - Math.min(12, pitch * 0.35), centerY);
+        ctx.lineTo(x1 + lead, centerY);
+        ctx.stroke();
+        ctx.restore();
+
+        const rx = clamp(pitch * 0.58, 4.3, 54);
+        const cy = centerY;
+
+        for (let i = 0; i < state.turns; i += 1) {
+          const cx = x0 + pitch * (i + 0.5);
+          drawEllipseSegment(cx, cy, rx, radius, Math.PI, Math.PI * 2, "rgba(116, 71, 40, 0.56)", wireWidth);
+        }
+
+        for (let i = 0; i < state.turns; i += 1) {
+          const cx = x0 + pitch * (i + 0.5);
+          drawEllipseSegment(cx, cy, rx, radius, 0, Math.PI, "#c87934", wireWidth + 0.5);
+          drawEllipseSegment(cx, cy, rx, radius, 0.16 * Math.PI, 0.84 * Math.PI, "rgba(255, 218, 166, 0.5)", Math.max(1.1, wireWidth * 0.26));
+        }
+
+        drawCurrentArrows(geometry, currentDirection, currentAlpha, currentRGB, time, visualStrength);
+      }
+
+      function drawMiniArrowAt(x, y, dx, dy, size, color) {
+        const length = Math.hypot(dx, dy) || 1;
+        const ux = dx / length;
+        const uy = dy / length;
+        const startX = x - ux * size * 0.8;
+        const startY = y - uy * size * 0.8;
+        const endX = x + ux * size * 0.8;
+        const endY = y + uy * size * 0.8;
+
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2.4, size * 0.18);
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        ctx.restore();
+        drawArrowHead(startX, startY, endX, endY, size * 0.62, color);
+      }
+
+      function drawCurrentArrows(geometry, direction, alpha, rgb, time, visualStrength) {
+        const { x0, x1, centerY, coilLength, radius, lead } = geometry;
+        const color = rgba(rgb, alpha);
+        const lineWidth = 2.5 + visualStrength * 1.2;
+        const headSize = 8.5 + visualStrength * 2.5;
+
+        drawArrowLine(
+          direction > 0 ? x0 - lead + 12 : x0 - 12,
+          centerY,
+          direction > 0 ? x0 - 18 : x0 - lead + 18,
+          centerY,
+          {
+            rgb,
+            alpha,
+            lineWidth,
+            headSize,
+            arrowPositions: [0.62]
+          }
+        );
+
+        drawArrowLine(
+          direction > 0 ? x1 + 14 : x1 + lead - 12,
+          centerY,
+          direction > 0 ? x1 + lead - 18 : x1 + 18,
+          centerY,
+          {
+            rgb,
+            alpha,
+            lineWidth,
+            headSize,
+            arrowPositions: [0.62]
+          }
+        );
+
+        const arrowCount = clamp(Math.floor(state.turns / 6) + 3, 3, 7);
+        const travel = ((time * 0.00006 * direction) % 1 + 1) % 1;
+
+        for (let i = 0; i < arrowCount; i += 1) {
+          const t = ((i + 0.62) / arrowCount + travel * 0.08) % 1;
+          const theta = Math.PI * 2 * state.turns * t;
+          const x = x0 + coilLength * t;
+          const y = centerY + Math.sin(theta) * radius;
+          const dx = direction * coilLength;
+          const dy = direction * Math.cos(theta) * Math.PI * 2 * state.turns * radius;
+          drawMiniArrowAt(x, y, dx, dy, headSize + 1, color);
+        }
+      }
+
+      function drawScaleLabels(geometry, field, turnDensity) {
+        const { x0, x1, centerY, radius } = geometry;
+        ctx.save();
+        ctx.fillStyle = "rgba(24, 32, 34, 0.65)";
+        ctx.font = "700 13px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`${state.turns} turns`, (x0 + x1) / 2, centerY + radius + 34);
+        ctx.fillText(`${state.length.toFixed(2)} m`, (x0 + x1) / 2, centerY + radius + 53);
+
+        ctx.textAlign = "left";
+        ctx.font = "650 12px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        const label = field === 0
+          ? "B = 0 T"
+          : `B = ${field.toExponential(2)} T`;
+        ctx.fillText(label, x0, centerY - radius - 35);
+        ctx.fillText(`n = ${turnDensity.toFixed(1)} turns/m`, x0, centerY - radius - 18);
+        ctx.restore();
+      }
+
+      function drawFrame(time) {
+        resizeCanvas();
+
+        const rect = canvas.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        const geometry = getGeometry(width, height);
+        const turnDensity = state.turns / state.length;
+        const field = MU0 * turnDensity * state.current;
+        const visualStrength = state.current === 0 ? 0 : clamp(Math.pow(field / MAX_B, 0.42), 0, 1);
+
+        drawBackground(width, height);
+        drawAirCore(geometry);
+        drawFieldLines(geometry, visualStrength, time);
+
+        if (state.current === 0) {
+          drawNoCurrentMessage(geometry);
+        }
+
+        drawSolenoid(geometry, visualStrength, time);
+        drawScaleLabels(geometry, field, turnDensity);
+
+        requestAnimationFrame(drawFrame);
+      }
+
+      controls.current.addEventListener("input", readInputs);
+      controls.turns.addEventListener("input", readInputs);
+      controls.length.addEventListener("input", readInputs);
+      for (const direction of controls.directions) {
+        direction.addEventListener("change", readInputs);
+      }
+
+      window.addEventListener("resize", resizeCanvas);
+      readInputs();
+      requestAnimationFrame(drawFrame);
+    })();
+  </script>
+</body>
+</html>
